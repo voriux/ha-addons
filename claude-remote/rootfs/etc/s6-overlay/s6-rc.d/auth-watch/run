@@ -1,0 +1,25 @@
+#!/command/with-contenv bashio
+# Every 10 minutes: logged out → HA notification once; logged in again → restart the server.
+source /run/claude/env
+state=unknown
+while true; do
+  if [ -f /data/.remote-setup-done ]; then
+    if s6-setuidgid claude bash -c 'source /run/claude/env && claude auth status' | jq -e '.loggedIn' >/dev/null 2>&1; then
+      if [ "$state" = out ]; then
+        bashio::log.info "Logged in again: restarting the Remote Control server"
+        s6-svc -r /run/service/claude-remote
+      fi
+      state=in
+    else
+      if [ "$state" != out ] && [ -n "${HA_TOKEN:-}" ]; then
+        curl -fsS -m 10 -X POST \
+          -H "Authorization: Bearer $HA_TOKEN" -H 'Content-Type: application/json' \
+          -d '{"title":"Claude on HA","message":"Claude is logged out. Open the Claude panel and run claude-setup.","notification_id":"claude_remote_login"}' \
+          http://homeassistant:8123/api/services/persistent_notification/create >/dev/null \
+          || bashio::log.warning "could not create the HA notification"
+      fi
+      state=out
+    fi
+  fi
+  sleep 600
+done

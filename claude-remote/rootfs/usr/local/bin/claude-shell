@@ -1,0 +1,5 @@
+#!/bin/bash
+source /run/claude/env
+cd "$CLAUDE_WORKDIR" 2>/dev/null || cd /data
+[ -f /data/.remote-setup-done ] || echo "First run: type 'claude-setup'."
+exec bash -l

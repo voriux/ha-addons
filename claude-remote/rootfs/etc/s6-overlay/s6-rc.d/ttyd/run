@@ -1,0 +1,5 @@
+#!/command/with-contenv bashio
+# Loopback only; nginx in front lets just the ingress proxy through.
+exec s6-setuidgid claude ttyd --interface lo --port 7681 --writable \
+  --client-option titleFixed=Claude --client-option fontSize=14 \
+  /usr/local/bin/claude-shell

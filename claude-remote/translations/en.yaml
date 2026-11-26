@@ -1,0 +1,25 @@
+configuration:
+  session_name:
+    name: Session name
+    description: Name shown in claude.ai/code and the Claude app.
+  spawn:
+    name: Spawn mode
+    description: worktree gives each session its own git worktree.
+  permission_mode:
+    name: Permission mode
+    description: Permission mode for sessions started from the app.
+  capacity:
+    name: Max sessions
+    description: Each session needs 200–400 MB RAM.
+  repositories:
+    name: Repositories
+    description: owner/name list. The first one is the working folder.
+  ha_token:
+    name: Home Assistant token
+    description: Long-lived token of the non-admin claude user.
+  github_token:
+    name: GitHub token
+    description: Fine-grained token for the repositories above.
+  webhook_id:
+    name: Webhook id
+    description: HA webhook called when Claude needs input.

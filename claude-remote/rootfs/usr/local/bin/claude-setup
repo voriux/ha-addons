@@ -1,0 +1,21 @@
+#!/bin/bash
+# One-time (and after login expiry): log in, then accept the trust and Remote Control prompts.
+set -e
+source /run/claude/env
+cd "$CLAUDE_WORKDIR"
+
+if ! claude auth status | jq -e '.loggedIn' >/dev/null; then
+  echo "Step 1: log in. Open the URL on your phone or laptop, then paste the code here."
+  claude auth login
+fi
+claude auth status --text
+
+if [ ! -f /data/.remote-setup-done ]; then
+  echo
+  echo "Step 2: answer 'y' to the trust and Enable Remote Control prompts."
+  echo "When it shows the session is ready, press Ctrl-C."
+  claude remote-control --spawn session --name "${CLAUDE_SESSION_NAME}-setup" || true
+  touch /data/.remote-setup-done
+fi
+echo
+echo "Done. The server starts within a minute; check the app log."

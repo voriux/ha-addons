@@ -1,0 +1,78 @@
+#!/command/with-contenv bashio
+# Prepares /data as the claude user's home: env file, git, clones, Claude settings.
+set -e
+
+# Read /data/options.json directly: bashio::config needs the Supervisor API, which local test runs lack.
+opt() { jq -r --arg k "$1" '.[$k] // empty' /data/options.json; }
+
+mkdir -p /data/workspace /data/.claude /run/claude
+find /data -mindepth 1 -maxdepth 1 ! -name options.json -exec chown -R claude:claude {} +
+chown claude:claude /data /run/claude
+chmod 700 /run/claude
+
+first_repo="$(jq -r '.repositories[0]' /data/options.json)"
+workdir="/data/workspace/${first_repo#*/}"
+
+# Tokens go to tmpfs only; the shell and every service source this file.
+env_file=/run/claude/env
+{
+  printf 'export HOME=/data\n'
+  printf 'export DISABLE_AUTOUPDATER=1\n'
+  printf 'export CLAUDE_WORKDIR=%q\n' "$workdir"
+  printf 'export CLAUDE_SESSION_NAME=%q\n' "$(opt session_name)"
+  printf 'export CLAUDE_SPAWN=%q\n' "$(opt spawn)"
+  printf 'export CLAUDE_CAPACITY=%q\n' "$(opt capacity)"
+  printf 'export CLAUDE_PERMISSION_MODE=%q\n' "$(opt permission_mode)"
+  if [ -n "$(opt ha_token)" ]; then printf 'export HA_TOKEN=%q\n' "$(opt ha_token)"; fi
+  if [ -n "$(opt github_token)" ]; then printf 'export GH_TOKEN=%q\n' "$(opt github_token)"; fi
+  if [ -n "$(opt webhook_id)" ]; then printf 'export HA_WEBHOOK_ID=%q\n' "$(opt webhook_id)"; fi
+} > "$env_file"
+chown claude:claude "$env_file"
+chmod 600 "$env_file"
+
+as_claude() { s6-setuidgid claude bash -c "source $env_file && $1"; }
+
+as_claude 'git config --global user.name "Claude on HA" && git config --global user.email "claude@homeassistant.local" && git config --global init.defaultBranch main'
+if [ -n "$(opt github_token)" ]; then
+  as_claude 'gh auth setup-git' || bashio::log.warning "gh auth setup-git failed; pushes and PRs will not work"
+else
+  bashio::log.warning "github_token is not set: repositories clone read-only if public, no pushes or PRs"
+fi
+
+# Existing clones are only fetched, never reset: a session may have work in progress.
+for repo in $(jq -r '.repositories[]' /data/options.json); do
+  dir="/data/workspace/${repo#*/}"
+  if [ -d "$dir/.git" ]; then
+    as_claude "git -C '$dir' fetch --prune --quiet" || bashio::log.warning "fetch failed for $repo"
+  else
+    as_claude "git clone --quiet 'https://github.com/$repo.git' '$dir'" || bashio::log.error "clone failed for $repo"
+  fi
+done
+
+# Rewritten on every start: edit the app options, not this file.
+hooks='{}'
+if [ -n "$(opt webhook_id)" ]; then
+  hooks='{"Notification":[{"hooks":[{"type":"command","command":"/usr/local/bin/notify-ha"}]}]}'
+fi
+jq -n --argjson hooks "$hooks" '{
+  enabledMcpjsonServers: ["home-assistant"],
+  permissions: {
+    deny: [
+      "Bash(git push origin main*)",
+      "Bash(git push * main)",
+      "Bash(git push * HEAD:main*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Read(**/secrets.yaml)",
+      "Read(//homeassistant/secrets.yaml)",
+      "Read(//data/options.json)",
+      "Read(//run/claude/**)",
+      "Read(//data/.claude/.credentials.json)"
+    ]
+  },
+  hooks: $hooks
+}' > /data/.claude/settings.json
+chown claude:claude /data/.claude/settings.json
+
+[ -f /data/.remote-setup-done ] || bashio::log.warning "First run: open the Claude panel and run 'claude-setup'."
+bashio::log.info "Workdir: $workdir"

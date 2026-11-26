@@ -1,0 +1,3 @@
+#!/bin/sh
+# Back off after a crash so a bad login or config does not spin the CPU.
+[ "$1" = 0 ] || [ "$1" = 256 ] || sleep 4

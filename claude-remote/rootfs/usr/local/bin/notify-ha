@@ -1,0 +1,6 @@
+#!/bin/bash
+# Claude Code hook: forwards the hook JSON to the HA webhook (Alexa announcement automation).
+source /run/claude/env
+[ -n "${HA_WEBHOOK_ID:-}" ] || exit 0
+curl -fsS -m 5 -X POST -H 'Content-Type: application/json' --data-binary @- \
+  "http://homeassistant:8123/api/webhook/${HA_WEBHOOK_ID}" >/dev/null || true

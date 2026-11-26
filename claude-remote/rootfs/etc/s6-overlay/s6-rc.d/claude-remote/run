@@ -1,0 +1,19 @@
+#!/command/with-contenv bashio
+source /run/claude/env
+
+if [ ! -f /data/.remote-setup-done ]; then
+  bashio::log.warning "Not set up yet: open the Claude panel and run 'claude-setup'. Checking again in 30 s."
+  exec sleep 30
+fi
+if ! s6-setuidgid claude bash -c 'source /run/claude/env && claude auth status' | jq -e '.loggedIn' >/dev/null 2>&1; then
+  bashio::log.warning "Claude is logged out: open the Claude panel and run 'claude-setup'. Checking again in 60 s."
+  exec sleep 60
+fi
+
+cd "$CLAUDE_WORKDIR"
+bashio::log.info "Starting Remote Control server '$CLAUDE_SESSION_NAME' in $CLAUDE_WORKDIR"
+exec s6-setuidgid claude claude remote-control \
+  --name "$CLAUDE_SESSION_NAME" \
+  --spawn "$CLAUDE_SPAWN" \
+  --capacity "$CLAUDE_CAPACITY" \
+  --permission-mode "$CLAUDE_PERMISSION_MODE"
